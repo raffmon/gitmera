@@ -1,0 +1,293 @@
+package config_test
+
+import (
+	"strings"
+	"testing"
+
+	"gitmera/pkg/config"
+)
+
+func TestLoad_Valid(t *testing.T) {
+	input := `
+version: "1"
+projects:
+  api:
+    repo: "git@github.com:example/api.git"
+    path: "./api"
+  web:
+    repo: "https://github.com/example/web.git"
+    path: "src/web"
+`
+	cfg, err := config.Load(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if cfg.Version != "1" {
+		t.Errorf("Expected version 1, got %q", cfg.Version)
+	}
+
+	if len(cfg.Projects) != 2 {
+		t.Errorf("Expected 2 projects, got %d", len(cfg.Projects))
+	}
+}
+
+func TestLoad_StrictCheck(t *testing.T) {
+	input := `
+version: "1"
+unknown_field: "value"
+projects:
+  api:
+    repo: "git@github.com:example/api.git"
+    path: "./api"
+`
+	_, err := config.Load(strings.NewReader(input))
+	if err == nil {
+		t.Error("Expected strict parsing error due to unknown_field, got nil")
+	}
+}
+
+func TestLoad_PathTraversalProtection(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"Absolute path", "/etc/passwd"},
+		{"Relative parent jump", "../outside"},
+		{"Double parent jump", "sub/../../outside"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Config{
+				Version: "1",
+				Projects: map[string]config.ProjectConfig{
+					"bad": {Repo: "git@github.com:example/bad.git", Path: tt.path},
+				},
+			}
+			err := cfg.Validate()
+			if err == nil {
+				t.Errorf("Expected path traversal error for path %q, got nil", tt.path)
+			}
+		})
+	}
+}
+
+func TestValidate_RejectsRemoteHelperTransportSyntax(t *testing.T) {
+	tests := []struct {
+		name string
+		repo string
+	}{
+		{"ext transport with shell command", "ext::sh -c touch /tmp/pwned"},
+		{"fd transport", "fd::0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Config{
+				Version: "1",
+				Projects: map[string]config.ProjectConfig{
+					"bad": {Repo: tt.repo, Path: "./bad"},
+				},
+			}
+			err := cfg.Validate()
+			if err == nil {
+				t.Errorf("expected invalid Git URI error for repo %q, got nil", tt.repo)
+			}
+		})
+	}
+}
+
+func TestValidate_MissingVersion(t *testing.T) {
+	cfg := config.Config{
+		Projects: map[string]config.ProjectConfig{
+			"api": {Repo: "git@github.com:example/api.git", Path: "./api"},
+		},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for missing version, got nil")
+	}
+}
+
+func TestValidate_EmptyProjects(t *testing.T) {
+	cfg := config.Config{
+		Version:  "1",
+		Projects: map[string]config.ProjectConfig{},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty projects, got nil")
+	}
+}
+
+func TestValidate_EmptyRepoURI(t *testing.T) {
+	cfg := config.Config{
+		Version: "1",
+		Projects: map[string]config.ProjectConfig{
+			"api": {Repo: "", Path: "./api"},
+		},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty repo URI, got nil")
+	}
+}
+
+func TestValidate_EmptyLocalPath(t *testing.T) {
+	cfg := config.Config{
+		Version: "1",
+		Projects: map[string]config.ProjectConfig{
+			"api": {Repo: "git@github.com:example/api.git", Path: ""},
+		},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty local path, got nil")
+	}
+}
+
+func TestValidate_ValidGitURIFormats(t *testing.T) {
+	uris := []string{
+		"https://github.com/example/repo.git",
+		"http://gitlab.example.com/repo.git",
+		"git://github.com/repo.git",
+		"ssh://git@github.com/repo.git",
+		"file:///local/path/to/repo",
+		"git@github.com:example/repo.git",
+	}
+
+	for _, uri := range uris {
+		t.Run(uri, func(t *testing.T) {
+			cfg := config.Config{
+				Version: "1",
+				Projects: map[string]config.ProjectConfig{
+					"repo": {Repo: uri, Path: "./repo"},
+				},
+			}
+			if err := cfg.Validate(); err != nil {
+				t.Errorf("expected valid URI %q to pass, got error: %v", uri, err)
+			}
+		})
+	}
+}
+
+func TestValidate_EmptyProjectName(t *testing.T) {
+	cfg := config.Config{
+		Version: "1",
+		Projects: map[string]config.ProjectConfig{
+			"": {Repo: "git@github.com:example/repo.git", Path: "./repo"},
+		},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty project name, got nil")
+	}
+}
+
+func TestLoad_ConcurrencyAndTimeout(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expectError bool
+		expectedC   int
+		expectedT   string
+	}{
+		{
+			name: "Valid custom concurrency and timeout",
+			input: `
+version: "1"
+concurrency: 3
+timeout: "5m"
+projects:
+  api:
+    repo: "git@github.com:example/api.git"
+    path: "./api"
+`,
+			expectError: false,
+			expectedC:   3,
+			expectedT:   "5m",
+		},
+		{
+			name: "Zero concurrency",
+			input: `
+version: "1"
+concurrency: 0
+projects:
+  api:
+    repo: "git@github.com:example/api.git"
+    path: "./api"
+`,
+			expectError: true,
+		},
+		{
+			name: "Negative concurrency",
+			input: `
+version: "1"
+concurrency: -5
+projects:
+  api:
+    repo: "git@github.com:example/api.git"
+    path: "./api"
+`,
+			expectError: true,
+		},
+		{
+			name: "Invalid timeout format",
+			input: `
+version: "1"
+timeout: "invalid"
+projects:
+  api:
+    repo: "git@github.com:example/api.git"
+    path: "./api"
+`,
+			expectError: true,
+		},
+		{
+			name: "Non-positive timeout",
+			input: `
+version: "1"
+timeout: "0s"
+projects:
+  api:
+    repo: "git@github.com:example/api.git"
+    path: "./api"
+`,
+			expectError: true,
+		},
+		{
+			name: "Negative timeout",
+			input: `
+version: "1"
+timeout: "-5m"
+projects:
+  api:
+    repo: "git@github.com:example/api.git"
+    path: "./api"
+`,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := config.Load(strings.NewReader(tt.input))
+			if tt.expectError {
+				if err == nil {
+					t.Fatalf("expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				if cfg.Concurrency == nil || *cfg.Concurrency != tt.expectedC {
+					t.Errorf("expected concurrency %d, got %v", tt.expectedC, cfg.Concurrency)
+				}
+				if cfg.Timeout == nil || *cfg.Timeout != tt.expectedT {
+					t.Errorf("expected timeout %q, got %v", tt.expectedT, cfg.Timeout)
+				}
+			}
+		})
+	}
+}
