@@ -2,7 +2,8 @@
 set -eu
 
 REPO="raferreira96/gitmera"
-INSTALL_DIR="$HOME/.gitmera/bin"
+INSTALL_DIR="$HOME/.local/bin"
+LEGACY_DIR="$HOME/.gitmera"
 API_URL="https://api.github.com/repos/$REPO/releases/latest"
 DOWNLOAD_BASE="https://github.com/$REPO/releases/download"
 
@@ -95,10 +96,26 @@ tar -xzf "$WORKDIR/$ASSET" -C "$WORKDIR"
 mv "$WORKDIR/gitmera" "$INSTALL_DIR/gitmera"
 chmod 755 "$INSTALL_DIR/gitmera"
 
-PATH_LINE='export PATH="$HOME/.gitmera/bin:$PATH"'
+PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+LEGACY_PATH_LINE='export PATH="$HOME/.gitmera/bin:$PATH"'
 MARK_START="# >>> gitmera installer >>>"
 MARK_END="# <<< gitmera installer <<<"
 TOUCHED=""
+
+if [ -d "$LEGACY_DIR" ]; then
+  step "Removing legacy install at $LEGACY_DIR..."
+  rm -f "$LEGACY_DIR/bin/gitmera"
+  rmdir "$LEGACY_DIR/bin" "$LEGACY_DIR" 2>/dev/null || true
+fi
+
+# Older installers wrote a block pointing at ~/.gitmera/bin; drop it so it
+# neither dangles nor shadows the new location.
+for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+  if [ -f "$rc" ] && grep -qF "$LEGACY_PATH_LINE" "$rc"; then
+    sed "/^$MARK_START\$/,/^$MARK_END\$/d" "$rc" > "$WORKDIR/rc"
+    cat "$WORKDIR/rc" > "$rc"
+  fi
+done
 
 add_path_block() {
   file="$1"
@@ -114,28 +131,33 @@ add_path_block() {
   TOUCHED="$TOUCHED $file"
 }
 
-step "Updating shell startup files..."
-FOUND_RC=0
-for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
-  if [ -f "$rc" ]; then
-    FOUND_RC=1
-    add_path_block "$rc"
-  fi
-done
-
-if [ "$FOUND_RC" -eq 0 ]; then
-  add_path_block "$HOME/.profile"
-fi
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*) ;;
+  *)
+    step "Updating shell startup files..."
+    FOUND_RC=0
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+      if [ -f "$rc" ]; then
+        FOUND_RC=1
+        add_path_block "$rc"
+      fi
+    done
+    if [ "$FOUND_RC" -eq 0 ]; then
+      add_path_block "$HOME/.profile"
+    fi
+    ;;
+esac
 
 echo ""
 echo "gitmera $TAG installed to $INSTALL_DIR/gitmera"
 
-if [ -n "$TOUCHED" ]; then
-  echo "Added $INSTALL_DIR to PATH in:$TOUCHED"
-else
-  echo "$INSTALL_DIR was already on PATH in your shell startup files."
+if [ -z "$TOUCHED" ]; then
+  echo ""
+  echo "Verify with: gitmera --version"
+  exit 0
 fi
 
+echo "Added $INSTALL_DIR to PATH in:$TOUCHED"
 echo ""
 echo "This only takes effect in NEW terminal sessions. To use gitmera now, either"
 echo "open a new terminal or run, for example:"
