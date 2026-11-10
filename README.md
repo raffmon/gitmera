@@ -32,25 +32,25 @@ Gitmera allows you to execute Git commands across multiple repositories in paral
 ### Quick Install (Linux & macOS)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/raferreira96/gitmera/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/raffmon/gitmera/main/install.sh | sh
 ```
 
 Or with `wget`:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/raferreira96/gitmera/main/install.sh | sh
+wget -qO- https://raw.githubusercontent.com/raffmon/gitmera/main/install.sh | sh
 ```
 
 This installs gitmera into `~/.local/bin`, the [XDG](https://specifications.freedesktop.org/basedir-spec/latest/) location for user executables. If that directory is not already on your `PATH`, it is added in `~/.bashrc`, `~/.zshrc`, and/or `~/.profile` (whichever already exist); open a new terminal afterward, or `source` the relevant file, for `gitmera` to be available. Installs from older versions in `~/.gitmera/bin` are removed automatically.
 
 ### Binary Releases
 
-Download the latest release for your platform from the [Releases](https://github.com/raferreira96/gitmera/releases) page.
+Download the latest release for your platform from the [Releases](https://github.com/raffmon/gitmera/releases) page.
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/raferreira96/gitmera.git
+git clone https://github.com/raffmon/gitmera.git
 cd gitmera
 go install
 ```

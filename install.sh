@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="raferreira96/gitmera"
+REPO="raffmon/gitmera"
 INSTALL_DIR="$HOME/.local/bin"
 LEGACY_DIR="$HOME/.gitmera"
 API_URL="https://api.github.com/repos/$REPO/releases/latest"

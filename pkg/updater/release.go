@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-const DefaultBaseURL = "https://api.github.com/repos/raferreira96/gitmera"
+const DefaultBaseURL = "https://api.github.com/repos/raffmon/gitmera"
 
 type Asset struct {
 	Name               string `json:"name"`
